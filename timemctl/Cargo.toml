@@ -1,0 +1,13 @@
+[package]
+name = "timemctl"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+structopt = { workspace = true }
+directories = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+humantime = { workspace = true }
+parse-size = { workspace = true }
+
