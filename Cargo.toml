@@ -6,10 +6,33 @@ edition = "2021"
 [workspace.dependencies]
 serde = { version = "1.0.204", features = ["serde_derive"] }
 structopt = { version = "0.3.26", features = ["suggestions", "color", "doc"] }
+hashbrown = { version = "0.14.5", features = ["serde"] }
 directories = "5.0.1"
 serde_json = "1.0.120"
 humantime = "2.1.0"
 parse-size = "1.0.0"
+notify = "6.1.1"
+lazy_static = "1.5.0"
+bstr = "1.9.1"
+log = "0.4.22"
+env_logger = "0.11.3"
+git2 = "0.19.0"
+anyhow = "1.0.86"
+directory_trie = { path = "./directory_trie" }
 
 [workspace]
-members = ["./timemctl"]
+members = ["./timemctl", "directory_trie", "timemserv"]
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+directories.workspace = true
+notify.workspace = true
+hashbrown.workspace = true
+lazy_static.workspace = true
+bstr.workspace = true
+log.workspace = true
+env_logger.workspace = true
+git2.workspace = true
+anyhow.workspace = true
+directory_trie.workspace = true

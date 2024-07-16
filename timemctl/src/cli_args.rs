@@ -1,18 +1,17 @@
 use std::path::PathBuf;
-use std::time::Duration;
 
 use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
-use serde::{Deserialize, Serialize};
-
 use humantime::parse_duration;
 use parse_size::parse_size;
+
+use crate::WatchDir;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
     name = "timemctl", about = "TimeM configuration tool",
-    global_settings = &[AppSettings::ColoredHelp, AppSettings::ArgRequiredElseHelp]
+    global_settings = &[AppSettings::ColoredHelp]
 )]
 pub struct Args {
     #[structopt(subcommand)]
@@ -22,17 +21,20 @@ pub struct Args {
 #[derive(Debug, StructOpt)]
 pub enum Command {
     /// Adds a directory to the watch list
-    Add(CLIAdd),
+    #[structopt(name = "watch")]
+    Watch(CLIWatch),
+    /// Completely removes config file (*warning*, this unwatches all watched directories)
+    ClearConf,
 }
 
 #[derive(Debug, StructOpt)]
-pub struct CLIAdd {
+pub struct CLIWatch {
     #[structopt()]
     /// The directory to add to the watch list
     dir: String,
     #[structopt()]
-    /// How often to automatically take a snapshot of the directory
-    /// (e.g., 1h30m, 1d, 5m30s, etc.)
+    /// How often (e.g., 1h30m, 1d, 5m30s, etc.) to automatically take a snapshot of the directory
+    /// (snapshots are only take if files have changed)
     frequency: String,
     #[structopt(short, long)]
     /// Max file size to sync inside the folder (files above this size will not be snapshotted).
@@ -40,15 +42,8 @@ pub struct CLIAdd {
     max_file_size: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct WatchDir {
-    dir: PathBuf,
-    frequency: Duration,
-    max_file_size: u64,
-}
-
-impl From<CLIAdd> for Result<WatchDir, String> {
-    fn from(value: CLIAdd) -> Self {
+impl From<CLIWatch> for Result<WatchDir, String> {
+    fn from(value: CLIWatch) -> Self {
         let dir = PathBuf::from(value.dir);
         if !dir.exists() {
             return Err("Path doesn't exist".into());
@@ -62,10 +57,6 @@ impl From<CLIAdd> for Result<WatchDir, String> {
         let max_file_size = parse_size(value.max_file_size.unwrap_or("0B".into()))
             .map_err(|err| err.to_string())?;
 
-        Ok(WatchDir {
-            dir,
-            frequency,
-            max_file_size,
-        })
+        Ok(WatchDir::new(dir, frequency, max_file_size))
     }
 }

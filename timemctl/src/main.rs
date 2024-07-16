@@ -1,14 +1,14 @@
 mod cli_args;
-mod config_editor;
-mod macros;
-use cli_args::{Args, Command as ArgCommand, WatchDir};
-use config_editor::ConfigEditor;
+use cli_args::{Args, Command as ArgCommand};
+use std::fs;
+use timem::{exit_error, logger_init, Config, WatchDir, CONFIG_DIR};
 
 use structopt::StructOpt;
 
 fn main() {
+    logger_init();
     let args = Args::from_args();
-    let mut config = match ConfigEditor::new() {
+    let mut config = match Config::new(false) {
         Ok(config) => config,
         Err(err_str) => {
             exit_error!("Config error: {err_str}");
@@ -16,7 +16,7 @@ fn main() {
     };
 
     match args.cmd {
-        ArgCommand::Add(cli_add) => {
+        ArgCommand::Watch(cli_add) => {
             let add_cmd: WatchDir = match cli_add.into() {
                 Ok(wdir) => wdir,
                 Err(err_str) => {
@@ -30,6 +30,19 @@ fn main() {
                 Err(err_str) => {
                     exit_error!("Config flush error: {err_str}");
                 }
+            }
+        }
+        ArgCommand::ClearConf => {
+            if let Some(ref config_dir) = *CONFIG_DIR {
+                let config_file = config_dir.join("config.json");
+                match fs::remove_file(config_file) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        exit_error!("Failed to remove config file: {e}");
+                    }
+                }
+            } else {
+                exit_error!("Failed to find config directory");
             }
         }
     }

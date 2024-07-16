@@ -1,5 +1,5 @@
 [package]
-name = "timemctl"
+name = "timemserv"
 version = "0.0.1"
 edition = "2021"
 
@@ -10,5 +10,6 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 humantime = { workspace = true }
 parse-size = { workspace = true }
-log = { workspace = true }
+notify = { workspace = true }
+anyhow = { workspace = true }
 timem = { path = "../" }
