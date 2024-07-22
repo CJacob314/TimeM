@@ -30,6 +30,8 @@ fn main() -> Result<()> {
         snapshotted_paths.iter().for_each(|path| {
             config.dirs_with_changes.remove(path);
         });
+
+        std::hint::spin_loop();
     }
 }
 
