@@ -1,4 +1,6 @@
-use git2::{build::CheckoutBuilder, Commit, Oid, Repository, RepositoryInitOptions};
+use git2::{
+    build::CheckoutBuilder, Commit, ErrorCode::UnbornBranch, Oid, Repository, RepositoryInitOptions,
+};
 use std::cell::Cell;
 use std::ffi::OsStr;
 use std::fmt::{Display, Formatter, Result as FmtResult};
@@ -121,6 +123,28 @@ impl WatchDir {
         let oid = index.write_tree()?;
         let tree = self.repo.find_tree(oid)?;
 
+        let head_commit = self
+            .repo
+            .head()
+            .ok()
+            .and_then(|head| head.peel_to_commit().ok());
+        let has_changes = if let Some(head_commit) = head_commit {
+            let head_tree = head_commit.tree()?;
+            !self
+                .repo
+                .diff_tree_to_tree(Some(&head_tree), Some(&tree), None)?
+                .deltas()
+                .count()
+                > 0
+        } else {
+            true
+        };
+
+        if !has_changes {
+            log::info!("No changes to commit");
+            return Ok(false);
+        }
+
         let time = SystemTime::now().duration_since(time::UNIX_EPOCH)?;
         let signature = self.repo.signature()?;
         let parents = if let Ok(head) = self.repo.head() {
@@ -191,11 +215,15 @@ impl WatchDir {
     pub fn iter_commits(&self) -> Result<Vec<Result<Commit, git2::Error>>, Error> {
         self.repo.set_workdir(&self.target_dir, false)?;
         let mut revwalk = self.repo.revwalk()?;
-        revwalk.push_head()?;
-        revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
-        Ok(revwalk
-            .map(|oid_res| oid_res.and_then(|oid| self.repo.find_commit(oid)))
-            .collect())
+        match revwalk.push_head() {
+            Ok(_) => {
+                revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
+                Ok(revwalk
+                    .map(|oid_res| oid_res.and_then(|oid| self.repo.find_commit(oid)))
+                    .collect())
+            }
+            Err(_) => Ok(vec![]),
+        }
     }
 
     pub fn get_commit(&self, commit_hash: &str) -> Result<Commit, Error> {

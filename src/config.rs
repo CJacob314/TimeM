@@ -1,7 +1,7 @@
 use crate::exit_error;
 use crate::WatchDir;
 use notify::{
-    event::{Event, EventKind, ModifyKind},
+    event::{Event, EventKind},
     Config as NotifyConfig, RecommendedWatcher, RecursiveMode, Result as NotifyResult, Watcher,
 };
 use std::fs;
@@ -44,7 +44,7 @@ impl Config {
             match Self::load_config(&config_path) {
                 Ok(dirs) => dirs,
                 Err(err) => {
-                    log::warn!("Failed to load config: {}", err);
+                    log::debug!("Failed to load config: {}", err);
                     HashMap::new()
                 }
             }
@@ -129,59 +129,68 @@ impl Config {
             .clone()
             .and_then(|f| Some(f.join("config.json")))
             .ok_or("Could not locate config directory")?;
-        match self.config_change_listener.try_recv() {
-            Ok(event_result) => {
-                if let Ok(event) = event_result {
-                    let path = event.paths.get(0).ok_or("Got notify event without path")?;
+        loop {
+            match self.config_change_listener.try_recv() {
+                Ok(event_result) => {
+                    if let Ok(event) = event_result {
+                        let path = event.paths.get(0).ok_or("Got notify event without path")?;
 
-                    if !matches!(event.kind, EventKind::Access(_)) {
-                        // TODO: Determine if the config.json file was changed or some other watched file
-                        if path == &config_file_path {
-                            // Config file was changed
-                            let file =
-                                fs::File::open(&self.config_path).map_err(|err| err.to_string())?;
-                            let buf_reader = BufReader::new(file);
-                            let serde_stream = Deserializer::from_reader(buf_reader)
-                                .into_iter::<serde_json::Value>();
-                            for watch_dir_res in serde_stream {
-                                let serde_value = watch_dir_res.map_err(|err| err.to_string())?;
-                                if let serde_json::Value::Object(map) = serde_value {
-                                    let (_, watch_dir_value) = map.into_iter().next().ok_or("Invalid config.json contents. Try clearing config with `timemctl clearconf`".to_string())?;
-                                    let watch_dir: WatchDir =
-                                        serde_json::from_value(watch_dir_value)
-                                            .map_err(|err| err.to_string())?;
-                                    let path = watch_dir.target_dir().to_owned();
-                                    if self.watched_dirs.insert(path.clone(), watch_dir).is_none() {
-                                        // This is a new dir to watch!
-                                        self.dir_watcher
-                                            .watch(&path, RecursiveMode::Recursive)
-                                            .map_err(|err| err.to_string())?;
-                                        self.dir_trie.insert(&path, path.clone());
-                                        log::info!(
-                                            "Config file changed. Added new watched dir {:?}",
-                                            path
-                                        );
+                        if !matches!(event.kind, EventKind::Access(_)) {
+                            // TODO: Determine if the config.json file was changed or some other watched file
+                            if path == &config_file_path {
+                                // Config file was changed
+                                let file = fs::File::open(&self.config_path)
+                                    .map_err(|err| err.to_string())?;
+                                let buf_reader = BufReader::new(file);
+                                let serde_stream = Deserializer::from_reader(buf_reader)
+                                    .into_iter::<serde_json::Value>();
+                                for watch_dir_res in serde_stream {
+                                    let serde_value =
+                                        watch_dir_res.map_err(|err| err.to_string())?;
+                                    if let serde_json::Value::Object(map) = serde_value {
+                                        let (_, watch_dir_value) = map.into_iter().next().ok_or("Invalid config.json contents. Try clearing config with `timemctl clearconf`".to_string())?;
+                                        let watch_dir: WatchDir =
+                                            serde_json::from_value(watch_dir_value)
+                                                .map_err(|err| err.to_string())?;
+                                        let path = watch_dir.target_dir().to_owned();
+                                        if self
+                                            .watched_dirs
+                                            .insert(path.clone(), watch_dir)
+                                            .is_none()
+                                        {
+                                            // This is a new dir to watch!
+                                            self.dir_watcher
+                                                .watch(&path, RecursiveMode::Recursive)
+                                                .map_err(|err| err.to_string())?;
+                                            self.dir_trie.insert(&path, path.clone());
+                                            log::info!(
+                                                "Config file changed. Added new watched dir {:?}",
+                                                path
+                                            );
+                                        }
                                     }
                                 }
-                            }
-                        } else {
-                            // Some other watched directory file was changed. Add to the hash set
-                            if let Some(parent_dir) = self.dir_trie.get(path) {
-                                log::trace!(
-                                    "Observed change with path {:?}, found watched path {:?}",
-                                    path,
-                                    &parent_dir
-                                );
-                                self.dirs_with_changes.insert(parent_dir);
+                            } else {
+                                // Some other watched directory file was changed. Add to the hash set
+                                if let Some(parent_dir) = self.dir_trie.get(path) {
+                                    log::trace!(
+                                        "Observed change with path {:?}, found watched path {:?}",
+                                        path,
+                                        &parent_dir
+                                    );
+                                    self.dirs_with_changes.insert(parent_dir);
+                                }
                             }
                         }
                     }
                 }
-            }
-            Err(e) if matches!(e, TryRecvError::Empty) => {}
-            Err(e) => {
-                // TryRecvError::Disconnected
-                exit_error!("Config file watching error: {e}");
+                Err(e) if matches!(e, TryRecvError::Empty) => {
+                    break;
+                }
+                Err(e) => {
+                    // TryRecvError::Disconnected
+                    exit_error!("Config file watching error: {e}");
+                }
             }
         }
         Ok(())

@@ -1,7 +1,6 @@
 mod cli_args;
 use cli_args::{Args, Command as ArgCommand};
 use std::fs;
-use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 use timem::{exit_error, logger_init, Config, WatchDir, CONFIG_DIR};
 
@@ -9,7 +8,7 @@ use structopt::StructOpt;
 
 use git2::{self, DiffFormat, Oid};
 
-use chrono::{Local, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Local, TimeZone, Utc};
 
 use anyhow::Error;
 
@@ -54,7 +53,11 @@ fn main() -> Result<(), Error> {
                 .iter()
                 .filter_map(|res| res.as_ref().ok())
                 .for_each(|commit| {
-                    println!("{} {:?}", commit.id(), format_git2_time(&commit.time()))
+                    println!(
+                        "{} {:?}",
+                        commit.id(),
+                        format_git2_time(&commit.time()).expect("git2 gave invalid time")
+                    )
                 });
         }
         ArgCommand::ClearConf => {
@@ -92,7 +95,7 @@ fn main() -> Result<(), Error> {
 
             let repo = watch_dir.get_repo();
             let diff =
-                repo.diff_tree_to_tree(Some(&commit_one.tree()?), Some(&commit_two.tree()?), None)?;
+                repo.diff_tree_to_tree(Some(&commit_two.tree()?), Some(&commit_one.tree()?), None)?;
 
             diff.print(DiffFormat::Patch, |_, _, line| {
                 match line.origin() {
@@ -121,9 +124,11 @@ fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn format_git2_time(time: &git2::Time) -> String {
+fn format_git2_time(time: &git2::Time) -> Result<String, Error> {
     // Convert the timestamp to NaiveDateTime
-    let naive = NaiveDateTime::from_timestamp(time.seconds(), 0);
+    let naive = DateTime::from_timestamp(time.seconds(), 0)
+        .ok_or(Error::msg("git2 time out-of-range"))?
+        .naive_utc();
     // Convert NaiveDateTime to DateTime<Utc>
     let datetime_utc = Utc.from_utc_datetime(&naive);
     // Convert to local time
@@ -138,11 +143,11 @@ fn format_git2_time(time: &git2::Time) -> String {
     let offset_minutes = offset_minutes % 60;
     let sign = if offset_hours < 0 { '-' } else { '+' };
 
-    format!(
+    Ok(format!(
         "{} {}{:02}{:02}",
         formatted_time,
         sign,
         offset_hours.abs(),
         offset_minutes
-    )
+    ))
 }

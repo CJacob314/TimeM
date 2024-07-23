@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use structopt::clap::AppSettings;
 use structopt::StructOpt;
@@ -92,7 +92,10 @@ pub struct CLILog {
 
 impl From<CLIWatch> for Result<WatchDir, String> {
     fn from(value: CLIWatch) -> Self {
-        let dir = PathBuf::from(value.dir);
+        let dir = Path::new(&value.dir)
+            .canonicalize()
+            .unwrap_or(PathBuf::from(value.dir));
+
         if !dir.exists() {
             return Err("Path doesn't exist".into());
         }
