@@ -49,7 +49,6 @@ fn main() -> Result<(), Error> {
             )))?;
 
             let current_head_oid = watch_dir.get_head_commit()?.id();
-            log::warn!("current_head_oid: {}", current_head_oid);
 
             watch_dir
                 .iter_commits()?

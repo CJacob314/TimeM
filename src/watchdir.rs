@@ -1,5 +1,6 @@
 use git2::{
-    build::CheckoutBuilder, Commit, ErrorCode::UnbornBranch, Oid, Repository, RepositoryInitOptions,
+    build::CheckoutBuilder, Commit, ErrorCode::UnbornBranch, Oid, Repository,
+    RepositoryInitOptions, StatusOptions,
 };
 use std::cell::Cell;
 use std::ffi::OsStr;
@@ -118,6 +119,26 @@ impl WatchDir {
             index.add_path(relative_path)?;
         }
 
+        // Handle deleted files
+        for status_entry in self
+            .repo
+            .statuses(Some(
+                StatusOptions::new()
+                    .include_untracked(false)
+                    .include_ignored(true),
+            ))?
+            .iter()
+        {
+            let path = Path::new(
+                status_entry
+                    .path()
+                    .ok_or(Error::msg("Could not get path from git2 StatusEntry"))?,
+            );
+            if !path.exists() {
+                index.remove_path(path)?;
+            }
+        }
+
         index.write()?;
 
         let oid = index.write_tree()?;
@@ -175,30 +196,26 @@ impl WatchDir {
     pub fn restore_snapshot(
         &self,
         commit: Commit,
-        restore_to: Option<impl AsRef<Path>>,
+        restore_to_opt: Option<impl AsRef<Path>>,
     ) -> Result<(), Error> {
-        let restore_to = restore_to
+        let restore_to = restore_to_opt
             .as_ref()
             .map(|p| p.as_ref())
             .unwrap_or(&self.target_dir);
-        let repo = Repository::open(&self.dotgit_dir)?;
         let mut checkout_builder = CheckoutBuilder::new();
         // self.repo.set_workdir(&self.dotgit_dir, false)?; // EXPERIMENTAL CODE
         checkout_builder.target_dir(restore_to);
         checkout_builder.force();
 
-        log::warn!("restore_snapshot commit.id() == {}", commit.id());
+        let repo = Repository::open(&self.dotgit_dir)?;
         let commit = repo.find_commit(commit.id())?;
-        log::warn!(
-            "From oid {} found commit {:?} in opened repo",
-            commit.id(),
-            commit
-        );
 
-        let tree = commit.tree()?;
-        log::warn!("commit.tree() == {:?}", tree);
         repo.checkout_tree(commit.tree()?.as_object(), Some(&mut checkout_builder))?;
-        self.repo.set_head_detached(commit.id())?;
+
+        if restore_to_opt.is_none() || restore_to == self.target_dir {
+            self.repo.set_head_detached(commit.id())?;
+        }
+
         let head = repo.head()?;
         log::warn!(
             "After repo.checkout_tree and repo.set_head_detached, head.peel_to_commit() = {:?}",
