@@ -174,29 +174,42 @@ impl WatchDir {
 
     pub fn restore_snapshot(
         &self,
-        oid: Oid,
+        commit: Commit,
         restore_to: Option<impl AsRef<Path>>,
-        force: bool,
     ) -> Result<(), Error> {
         let restore_to = restore_to
             .as_ref()
             .map(|p| p.as_ref())
             .unwrap_or(&self.target_dir);
-        let commit = self.repo.find_commit(oid)?;
-        let tree = commit.tree()?;
-
+        let repo = Repository::open(&self.dotgit_dir)?;
         let mut checkout_builder = CheckoutBuilder::new();
+        // self.repo.set_workdir(&self.dotgit_dir, false)?; // EXPERIMENTAL CODE
         checkout_builder.target_dir(restore_to);
-        if force {
-            checkout_builder.force();
-        }
+        checkout_builder.force();
 
-        self.repo
-            .checkout_tree(tree.as_object(), Some(&mut checkout_builder))?;
+        log::warn!("restore_snapshot commit.id() == {}", commit.id());
+        let commit = repo.find_commit(commit.id())?;
+        log::warn!(
+            "From oid {} found commit {:?} in opened repo",
+            commit.id(),
+            commit
+        );
+
+        let tree = commit.tree()?;
+        log::warn!("commit.tree() == {:?}", tree);
+        repo.checkout_tree(commit.tree()?.as_object(), Some(&mut checkout_builder))?;
+        self.repo.set_head_detached(commit.id())?;
+        let head = repo.head()?;
+        log::warn!(
+            "After repo.checkout_tree and repo.set_head_detached, head.peel_to_commit() = {:?}",
+            head.peel_to_commit()?
+        );
+
+        // self.repo.set_workdir(&self.target_dir, false)?; // EXPERIMENTAL CODE
 
         log::info!(
             "Restored snapshot {:?} of {:?} to {:?}",
-            oid,
+            commit.id(),
             self.target_dir,
             restore_to
         );
@@ -207,7 +220,7 @@ impl WatchDir {
     pub fn iter_oids(&self) -> Result<Vec<Result<Oid, git2::Error>>, Error> {
         self.repo.set_workdir(&self.target_dir, false)?;
         let mut revwalk = self.repo.revwalk()?;
-        revwalk.push_head()?;
+        revwalk.push_ref("refs/heads/main")?;
         revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
         Ok(revwalk.collect())
     }
@@ -215,7 +228,7 @@ impl WatchDir {
     pub fn iter_commits(&self) -> Result<Vec<Result<Commit, git2::Error>>, Error> {
         self.repo.set_workdir(&self.target_dir, false)?;
         let mut revwalk = self.repo.revwalk()?;
-        match revwalk.push_head() {
+        match revwalk.push_ref("refs/heads/main") {
             Ok(_) => {
                 revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
                 Ok(revwalk
@@ -227,12 +240,47 @@ impl WatchDir {
     }
 
     pub fn get_commit(&self, commit_hash: &str) -> Result<Commit, Error> {
-        let oid = Oid::from_str(commit_hash)?;
-        self.repo.find_commit(oid).map_err(|err| err.into())
+        let commit_offset =
+            if commit_hash.to_uppercase() == "H" || commit_hash.to_uppercase() == "HEAD" {
+                0
+            } else if let Some((left, right)) = commit_hash.split_once('+') {
+                -right.parse::<isize>()?
+            } else if let Some((left, right)) = commit_hash.split_once('-') {
+                right.parse::<isize>()?
+            } else {
+                return self
+                    .repo
+                    .find_commit(Oid::from_str(commit_hash)?)
+                    .map_err(|err| err.into());
+            };
+
+        let head = self.get_head_commit()?;
+        let all_commits = self
+            .iter_commits()?
+            .into_iter()
+            .filter_map(Result::ok)
+            .collect::<Vec<Commit>>();
+        let head_commit_index = all_commits
+            .iter()
+            .position(|c| c.id() == head.id())
+            .ok_or(Error::msg("Couldn't find head commit"))?;
+
+        let commit_index = (head_commit_index as isize + commit_offset) as usize;
+
+        all_commits
+            .get(commit_index)
+            .cloned()
+            .ok_or(Error::msg(format!(
+                "Could not find commit at index {commit_index}"
+            )))
     }
 
     pub fn get_repo(&self) -> &Repository {
         &self.repo
+    }
+
+    pub fn get_head_commit(&self) -> Result<Commit, Error> {
+        self.repo.head()?.peel_to_commit().map_err(|err| err.into())
     }
 }
 

@@ -50,9 +50,6 @@ pub struct CLIRestore {
     #[structopt(short, long)]
     /// If provided, the snapshot will be restored to this directory instead of the snapshot origin directory
     pub to: Option<String>,
-    #[structopt(short, long)]
-    /// If provided, the snapshot restore will overwrite any existing files in the target directory
-    pub force: bool,
 }
 
 #[derive(Debug, StructOpt)]

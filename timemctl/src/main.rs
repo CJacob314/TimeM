@@ -48,16 +48,27 @@ fn main() -> Result<(), Error> {
                 dir
             )))?;
 
+            let current_head_oid = watch_dir.get_head_commit()?.id();
+            log::warn!("current_head_oid: {}", current_head_oid);
+
             watch_dir
                 .iter_commits()?
                 .iter()
                 .filter_map(|res| res.as_ref().ok())
-                .for_each(|commit| {
-                    println!(
-                        "{} {:?}",
+                .map(|commit| {
+                    format!(
+                        "{}{} {:?}",
+                        if commit.id() == current_head_oid {
+                            "=> "
+                        } else {
+                            "   "
+                        },
                         commit.id(),
                         format_git2_time(&commit.time()).expect("git2 gave invalid time")
                     )
+                })
+                .for_each(|commit_str| {
+                    println!("{}", commit_str);
                 });
         }
         ArgCommand::ClearConf => {
@@ -111,13 +122,13 @@ fn main() -> Result<(), Error> {
             let dir = Path::new(&restore.dir)
                 .canonicalize()
                 .unwrap_or_else(|_| PathBuf::from(&restore.dir));
-            let watch_dir = config.get_watched_dir(&dir).ok_or(Error::msg(format!(
+            let mut watch_dir = config.get_watched_dir(&dir).ok_or(Error::msg(format!(
                 "The directory {:?} is not watched",
                 &dir
             )))?;
 
-            let oid = Oid::from_str(&restore.hash)?;
-            watch_dir.restore_snapshot(oid, restore.to.as_deref(), restore.force)?;
+            let commit = watch_dir.get_commit(&restore.hash)?;
+            watch_dir.restore_snapshot(commit, restore.to.as_deref())?;
         }
     }
 
@@ -135,7 +146,7 @@ fn format_git2_time(time: &git2::Time) -> Result<String, Error> {
     let datetime_local = datetime_utc.with_timezone(&Local);
 
     // Format the local time
-    let formatted_time = datetime_local.format("%Y-%m-%d %H:%M:%S");
+    let formatted_time = datetime_local.format("%D %r");
 
     // Calculate and format the timezone offset
     let offset_minutes = time.offset_minutes();
