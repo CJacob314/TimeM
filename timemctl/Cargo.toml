@@ -15,3 +15,7 @@ anyhow.workspace = true
 git2.workspace = true
 chrono.workspace = true
 timem = { path = "../" }
+
+[[bin]]
+name = "timemctl"
+path = "src/main.rs"

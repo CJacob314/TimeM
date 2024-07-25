@@ -22,7 +22,8 @@ chrono = "0.4.38"
 directory_trie = { path = "./directory_trie" }
 
 [workspace]
-members = ["./timemctl", "directory_trie", "timemserv"]
+members = ["timemctl", "directory_trie", "timemserv"]
+default-members = ["timemctl", "timemserv"]
 
 [dependencies]
 serde.workspace = true

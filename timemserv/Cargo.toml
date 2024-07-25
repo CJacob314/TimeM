@@ -13,3 +13,7 @@ parse-size = { workspace = true }
 notify = { workspace = true }
 anyhow = { workspace = true }
 timem = { path = "../" }
+
+[[bin]]
+name = "timemserv"
+path = "src/main.rs"
